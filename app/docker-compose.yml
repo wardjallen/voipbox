@@ -1,0 +1,50 @@
+version: "3"
+
+services:
+  db:
+    container_name: postgres
+    image: postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - db_data:/var/lib/postgresql/data/
+    ports:
+      - "5432:5432"
+    networks:
+      - db
+    restart: always
+
+  pgadmin:
+    container_name: pgadmin
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin4@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "${PGADMIN_PORT:-8090}:80"
+    networks:
+      - db
+    depends_on: 
+      - db
+    restart: always
+
+  backend:
+    build: ./backend
+    ports: 
+      - "8000:8000"
+    depends_on:
+      - db
+    command: uvicorn main:app --reload --host 0.0.0.0
+
+volumes: 
+  db_data:
+  pgadmin_data:
+
+networks:
+  db:
+    driver: bridge
+    
