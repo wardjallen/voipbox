@@ -1,2 +1,6 @@
+aerich==0.5.8
+asyncpg==0.25.0
 fastapi==0.70.0
+python-dotenv==0.19.2
+tortoise-orm==0.17.8
 uvicorn==0.15.0
