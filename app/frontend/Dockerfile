@@ -9,6 +9,6 @@ RUN npm install @vue/cli@4.5.15 -g
 COPY package.json .
 COPY package-lock.json .
 RUN npm install
-COPY . .
+
 
 CMD ["npm", "run", "serve"]
