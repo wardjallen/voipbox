@@ -40,7 +40,7 @@ async def login(user: OAuth2PasswordRequestForm = Depends()):
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.username}, expires_delta=access_token_expires
     )
     token = jsonable_encoder(access_token)
     content = {"message": "You've successfully logged in. Welcome back!"}

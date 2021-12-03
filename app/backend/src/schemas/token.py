@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 
 class TokenData(BaseModel):
-    email: Optional[str] = None
+    username: Optional[str] = None
 
 
 class Status(BaseModel):
