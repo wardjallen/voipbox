@@ -27,7 +27,7 @@ const actions = {
   },
   // eslint-disable-next-line no-empty-pattern
   async deleteUser({}, id) {
-    await axios.delete(`user/${id}`);
+    await axios.delete(`users/${id}`);
   },
   async logOut({commit}) {
     let user = null;
