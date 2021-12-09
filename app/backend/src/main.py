@@ -15,7 +15,7 @@ import src.crud.users as crud
 from src.auth.users import validate_user
 from src.schemas.users import UserInSchema, UserOutSchema
 
-from src.routes import users, clusters
+from src.routes import users, clusters, sites, cucm
 
 from src.auth.jwthandler import (
     create_access_token,
@@ -26,7 +26,7 @@ from src.auth.jwthandler import (
 
 app = FastAPI(title="VoipBox", version="0.0.1", docs_url="/swagger", )
 
-Tortoise.init_models(["src.database.models"], "models")
+#Tortoise.init_models(["src.database.models"], "models")
 
 
 ALLOWED_ORIGINS = [
@@ -83,3 +83,8 @@ async def login(user: OAuth2PasswordRequestForm = Depends()):
 
 app.include_router(users.router)
 app.include_router(clusters.router)
+app.include_router(sites.router)
+app.include_router(cucm.router)
+
+
+Tortoise.init_models(["src.database.models"], "models")

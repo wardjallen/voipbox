@@ -1,0 +1,340 @@
+import os
+import sys
+import json
+import random
+import string
+from src.ciscoaxl import axl
+from dotenv import load_dotenv
+from pathlib import Path
+from src.models.model import db
+from cryptography.fernet import Fernet
+
+dotenv_path = Path('.') / '.env'
+load_dotenv(dotenv_path=dotenv_path)
+
+# cucm = os.getenv("CUCM_HOSTNAME")
+# username = os.getenv("AXL_USERNAME")
+# password = os.getenv("AXL_PASSWORD")
+# version = os.getenv("CUCM_VERSION")
+
+
+def random_name_generator(size=12, chars=string.hexdigits):
+    random_name = "".join(random.choice(chars) for x in range(size))
+    print(random_name)
+    return random_name
+
+
+def decrypt_password(password):
+    key = os.getenv("CLUSTER_SECRET_KEY")
+    f = Fernet(key)
+    decrypted_password = f.decrypt(password.encode('utf-8'))
+    decrypted_password = decrypted_password.decode('utf-8')
+    return decrypted_password
+
+
+def auth(site):
+    for cluster in db.clusters.find({"name": site}):
+        print(cluster)
+        password = decrypt_password(cluster["axl_password"])
+        ucm = axl(username=cluster["axl_username"], password=password,
+                  cucm=cluster["cucm"], cucm_version=cluster["version"])
+    return ucm
+# print(ucm.add_directory_number('\\+15095909282', partition="internal"))
+
+# print(ucm.add_phone(f"SEP111222333457", lines=[('\\+77777', 'internal', 'Jim Smith', 'Jim Smith',
+#                                                 'Jim Smith - 77777', '0294127777')]))
+
+
+# phones = ucm.get_phones()
+
+# for phone in phones:
+#     print(phone)
+def jabber_devices(jabber_data, cucm_user_info):
+    jabber_devices = []
+    if jabber_data[0]['iphone']:
+        tct = {
+            'name': f"TCT{cucm_user_info.userid.upper()}",
+            'product': f"Cisco Dual Mode for iPhone",
+            'phone_template': f"Standard Dual Mode for iPhone",
+            'sip_profile': f"Standard SIP Profile for Mobile Device",
+            'enable_em': "true"
+
+        }
+        jabber_devices.append(tct)
+    if jabber_data[0]['desktop']:
+        csf = {
+            'name': f"CSF{cucm_user_info.userid.upper()}",
+            'product': f"Cisco Unified Client Services Framework",
+            'phone_template': f"Standard Client Services Framework",
+            'sip_profile': "Standard SIP Profile",
+            'enable_em': "true"
+        }
+        jabber_devices.append(csf)
+    if jabber_data[0]['android']:
+        bot = {
+            'name': f"BOT{cucm_user_info.userid.upper()}",
+            'product': f"Cisco Dual Mode for Android",
+            'phone_template': f"Standard Dual Mode for Android",
+            'sip_profile': f"Standard SIP Profile for Mobile Device",
+            'enable_em': "false"
+
+        }
+        jabber_devices.append(bot)
+    if jabber_data[0]['tablet']:
+        tab = {
+            'name': f"TAB{cucm_user_info.userid.upper()}",
+            'product': f"Cisco Jabber for Tablet",
+            'phone_template': f"Standard Jabber for Tablet",
+            'sip_profile': f"Standard SIP Profile for Mobile Device",
+            'enable_em': "true"
+
+        }
+        jabber_devices.append(tab)
+    return jabber_devices
+
+
+def add_devices(req):
+    return_info = {}
+    # req = req.dict()  # Comment out for local Testing
+    print(req)
+    if req["device_mac"]:
+        print(req["device_mac"])
+        phone_name = f"SEP{req['device_mac']}"
+    else:
+        random_mac = random_name_generator()
+        phone_name = f"SEP{random_mac}"
+    for site in db.sites.find({"name": req["site"]}):
+        print(site)
+        ucm = auth(site['cluster'])
+        print(ucm)
+        cucm_user_info = ucm.get_user(req["username"])
+        print(cucm_user_info.userid)
+        print(cucm_user_info.telephoneNumber)
+        if cucm_user_info.telephoneNumber.startswith('+'):
+            dn = f"\\{cucm_user_info.telephoneNumber}"
+        else:
+            dn = cucm_user_info.telephoneNumber
+        directory_number = ucm.add_directory_number(
+            dn,
+            partition=site['line_settings'][0]['line_pt'],
+            description=f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+            alerting_name=f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+            ascii_alerting_name=f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+            shared_line_css=site['line_settings'][0]['line_css'],
+            call_forward_css=site['line_settings'][0]['call_fwd_css'],
+            vm_profile_name=site['line_settings'][0]['vm_profile'],
+            forward_to_vm=site['line_settings'][0]['forward_to_vm']
+        )
+        return_info[dn] = directory_number
+        if 'internal_extension_length' in site['line_settings'][0]:
+            extension = cucm_user_info.telephoneNumber[-site['line_settings']
+                                                       [0]['internal_extension_length']:]
+            external_prefix = cucm_user_info.telephoneNumber[:-
+                                                             site['line_settings'][0]['internal_extension_length']]
+        if site['jabber']:
+            jabber_devices_to_build = jabber_devices(
+                site["jabber_devices"], cucm_user_info)
+        if 'em_settings' in site:
+            phone = ucm.add_phone(
+                phone_name,
+                description=f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                product=f"Cisco {site['device_settings'][0]['device_model']}",
+                phone_template=f"Standard {site['device_settings'][0]['device_model']} SIP",
+                sip_profile="Standard SIP Profile",
+                device_pool=site['device_settings'][0]['device_pool'],
+                css=site['device_settings'][0]['device_css'],
+                location=site['device_settings'][0]["location"],
+                owner_username=cucm_user_info.userid,
+                lines=[
+                    (
+                        dn,
+                        site['line_settings'][0]['line_pt'],
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName} - {extension}",
+                        external_prefix + 'X' *
+                        site['line_settings'][0]['internal_extension_length'],
+                        cucm_user_info.userid
+                    )
+                ],
+                em_service_name=site['em_settings'][0]['em_service_name'],
+                em_service_url=site['em_settings'][0]['em_service_url'],
+            )
+            return_info[phone_name] = phone
+            device_profile_name = f"UDP{cucm_user_info.userid.upper()}"
+            device_profile = ucm.add_device_profile(
+                device_profile_name,
+                description=f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                product=f"Cisco {site['device_settings'][0]['device_model']}",
+                phone_template=f"Standard {site['device_settings'][0]['device_model']} SIP",
+                dev_class="Device Profile",
+                protocol="SIP",
+                protocolSide="User",
+                softkey_template="Standard User",
+                lines=[
+                    (
+                        dn,
+                        site['line_settings'][0]['line_pt'],
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName} - {extension}",
+                        external_prefix + 'X' *
+                        site['line_settings'][0]['internal_extension_length'],
+                        cucm_user_info.userid
+                    )
+                ],
+                em_service_name=site['em_settings'][0]['em_service_name'],
+                em_service_url=site['em_settings'][0]['em_service_url'],
+            )
+            return_info[device_profile_name] = device_profile
+        else:
+            phone = ucm.add_phone(
+                phone_name,
+                description=f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                product=f"Cisco {site['device_settings'][0]['device_model']}",
+                phone_template=f"Standard {site['device_settings'][0]['device_model']} SIP",
+                sip_profile="Standard SIP Profile",
+                device_pool=site['device_settings'][0]['device_pool'],
+                css=site['device_settings'][0]['device_css'],
+                location=site['device_settings'][0]["location"],
+                owner_username=cucm_user_info.userid,
+                lines=[
+                    (
+                        dn,
+                        site['line_settings'][0]['line_pt'],
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName} - {extension}",
+                        external_prefix + 'X' *
+                        site['line_settings'][0]['internal_extension_length'],
+                        cucm_user_info.userid
+                    )
+                ]
+            )
+            return_info[phone_name] = phone
+        if site['jabber']:
+            for device in jabber_devices_to_build:
+                jabber = ucm.add_phone(
+                    device['name'],
+                    description=f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                    product=device['product'],
+                    phone_template=device['phone_template'],
+                    sip_profile=device['sip_profile'],
+                    enable_em=device['enable_em'],
+                    device_pool=site['device_settings'][0]['device_pool'],
+                    location=site['device_settings'][0]["location"],
+                    owner_username=cucm_user_info.userid,
+                    css=site['device_settings'][0]['device_css'],
+                    lines=[
+                        (
+                            dn,
+                            site['line_settings'][0]['line_pt'],
+                            f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                            f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                            f"{cucm_user_info.firstName} {cucm_user_info.lastName} - {extension}",
+                            external_prefix + 'X' *
+                            site['line_settings'][0]['internal_extension_length'],
+                            cucm_user_info.userid
+                        )
+                    ]
+                )
+                return_info[device['name']] = jabber
+        if site['single_number_reach']:
+            remote_destination_profile_name = f"RDP{cucm_user_info.userid.upper()}"
+            remote_destination_profile = ucm.add_remote_destination_profile(
+                remote_destination_profile_name,
+                description=f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                device_pool=site['device_settings'][0]['device_pool'],
+                location=site['device_settings'][0]["location"],
+                css=site['device_settings'][0]['device_css'],
+                lines=[
+                    (
+                        dn,
+                        site['line_settings'][0]['line_pt'],
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName}",
+                        f"{cucm_user_info.firstName} {cucm_user_info.lastName} - {extension}",
+                        external_prefix + 'X' *
+                        site['line_settings'][0]['internal_extension_length'],
+                        cucm_user_info.userid
+                    )
+                ],
+                owner_username=cucm_user_info.userid,
+            )
+            return_info[remote_destination_profile_name] = remote_destination_profile
+    return_info['user'] = cucm_user_info
+    return_info['site'] = site
+    return return_info
+
+
+def add_user_devices(req):
+    return_info = {}
+    devices = []
+    devices_list = []
+    # req = req.dict()  # Comment out for local Testing
+    print(req)
+    new_devices = add_devices(req)
+    print(new_devices)
+    for i in new_devices:
+        devices_list.append(i)
+        if i.startswith('TCT') or i.startswith('BOT') or i.startswith('TAB') or i.startswith('CSF') or i.startswith('SEP'):
+            devices.append(i)
+        else:
+            pass
+        if i.startswith('UDP'):
+            phone_profile = i
+        else:
+            pass
+    print(devices)
+    if new_devices['user']['telephoneNumber'].startswith('+'):
+        dn = f"\\{new_devices['user']['telephoneNumber']}"
+    else:
+        dn = new_devices['user']['telephoneNumber']
+    ucm = auth(new_devices['site']['cluster'])
+    update_user = ucm.update_user(
+        req['username'],
+        associatedDevices=devices,
+        primaryExtension=dn,
+        primaryExtPartition=new_devices['site']['line_settings'][0]['line_pt'],
+        phoneProfiles=phone_profile,
+
+    )
+
+    return ucm.get_user(req['username'])
+
+
+def remove_user_devices(req):
+    return_info = {}
+    # req = req.dict()  # Comment out for local Testing
+    print(req)
+    for site in db.sites.find({"name": req["site"]}):
+        print(site)
+        ucm = auth(site['cluster'])
+        print(ucm)
+        cucm_user_info = ucm.get_user(req["username"])
+        print(cucm_user_info)
+        print(cucm_user_info.userid)
+        print(cucm_user_info.telephoneNumber)
+        if cucm_user_info.associatedDevices:
+            for device in cucm_user_info.associatedDevices.device:
+                print(ucm.delete_phone(name=device))
+        if cucm_user_info.phoneProfiles:
+            for phone_profile in cucm_user_info.phoneProfiles.profileName:
+                print(ucm.delete_device_profile(name=phone_profile._value_1))
+        if cucm_user_info.associatedRemoteDestinationProfiles:
+            for remote_destination_profile in cucm_user_info.associatedRemoteDestinationProfiles.remoteDestinationProfile:
+                print(ucm.delete_remote_destination_profile(
+                    name=remote_destination_profile))
+        if cucm_user_info.telephoneNumber.startswith('+'):
+            dn = f"\\{cucm_user_info.telephoneNumber}"
+        else:
+            dn = cucm_user_info.telephoneNumber
+        print(ucm.delete_directory_number(pattern=dn,
+                                          routePartitionName=site['line_settings'][0]['line_pt']))
+    return ucm.get_user(req['username'])
+
+
+if __name__ == "__main__":
+    # print(add_user_devices({"username": "jdoe", "site": "NYC"}))
+    # print(remove_user_devices({"username": "jdoe", "site": "NYC"}))
+    pass

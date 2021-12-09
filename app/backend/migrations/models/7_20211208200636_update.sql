@@ -1,0 +1,10 @@
+-- upgrade --
+CREATE TABLE IF NOT EXISTS "devicepools" (
+    "id" SERIAL NOT NULL PRIMARY KEY,
+    "devicePoolName" VARCHAR(32) NOT NULL UNIQUE,
+    "created_at" TIMESTAMPTZ NOT NULL  DEFAULT CURRENT_TIMESTAMP,
+    "modified_at" TIMESTAMPTZ NOT NULL  DEFAULT CURRENT_TIMESTAMP,
+    "site_id" INT NOT NULL REFERENCES "sites" ("id") ON DELETE CASCADE
+);
+-- downgrade --
+DROP TABLE IF EXISTS "devicepools";

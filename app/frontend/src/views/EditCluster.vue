@@ -59,7 +59,6 @@ export default {
       try {
         await this.viewCluster(this.id);
         this.form.title = this.cluster.title;
-        this.form.content = this.cluster.content;
       } catch (error) {
         console.error(error);
         this.$router.push('/dashboard');

@@ -5,6 +5,7 @@ const state = {
   cluster: null
 };
 
+
 const getters = {
   stateClusters: state => state.clusters,
   stateCluster: state => state.cluster,

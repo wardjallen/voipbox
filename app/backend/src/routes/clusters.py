@@ -8,7 +8,6 @@ import src.crud.clusters as crud
 from src.auth.jwthandler import get_current_user
 from src.schemas.clusters import ClusterOutSchema, ClusterInSchema, UpdateCluster
 from src.schemas.token import Status
-from src.schemas.users import UserOutSchema
 
 
 router = APIRouter(
